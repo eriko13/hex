@@ -170,5 +170,6 @@ impl Feature {
         Self::PrintStart,
         Self::VoicePrompt,
         Self::CopyCaptureZip,
+        Self::RemoteTranscription,
     ];
 }
