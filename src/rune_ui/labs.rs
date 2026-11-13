@@ -218,6 +218,7 @@ pub(super) struct Store {
     /// draft, saved as the comma-separated field shows it.
     pub(super) origins: TextEdit,
     /// Whether `origins` started from the saved origins.
+    pub(super) origins_synced: bool,
     /// Labs › Remote transcription's server while it's on: a draft, saved
     /// trimmed once typing pauses.
     pub(super) host: TextEdit,

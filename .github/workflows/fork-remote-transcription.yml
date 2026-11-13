@@ -5,7 +5,7 @@ name: Fork remote transcription
 # regenerates the Labs page goldens and uploads any that changed.
 on:
   push:
-    branches: [remote-transcription]
+    branches: [remote-transcription, remote-transcription-ui]
   workflow_dispatch:
 
 permissions:
@@ -51,11 +51,15 @@ jobs:
           HEX_LOCAL_BUILD: "1"
           HEX_RELEASE_UNSIGNED: "1"
         run: |
-          # build-app.sh copies from target/release; an explicit target builds elsewhere.
-          rm -rf target/release
-          mkdir -p target/aarch64-apple-darwin/release
-          ln -s aarch64-apple-darwin/release target/release
-          bundle=$(scripts/build-app.sh)
+          # build-app.sh copies from target/release, but an explicit target
+          # builds into target/<target>/release. A symlink between the two
+          # deadlocks Cargo on its own build-directory lock, so the copy paths
+          # are rewritten instead.
+          sed "s#\$root/target/release/#\$root/target/$CARGO_BUILD_TARGET/release/#g" \
+            scripts/build-app.sh > scripts/build-app-ci.sh
+          chmod +x scripts/build-app-ci.sh
+          grep -n "target/$CARGO_BUILD_TARGET/release" scripts/build-app-ci.sh
+          bundle=$(scripts/build-app-ci.sh)
           file "$bundle/Contents/MacOS/hex" "$bundle/Contents/MacOS/scrawl-helper"
           mkdir -p dist
           /usr/bin/ditto -c -k --keepParent "$bundle" dist/Hex-remote.zip
