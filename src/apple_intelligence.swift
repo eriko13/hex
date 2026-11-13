@@ -195,7 +195,12 @@ public func hexAppleIntelligenceAvailability() -> Int32 {
 public func hexAppleIntelligenceContextSize() -> Int {
     #if canImport(FoundationModels)
     guard #available(macOS 26.0, *) else { return 0 }
+    #if compiler(>=6.3)
     return SystemLanguageModel.default.contextSize
+    #else
+    // SDKs before macOS 26.4 don't expose it; 4096 tokens is the on-device model's window.
+    return 4096
+    #endif
     #else
     return 0
     #endif
