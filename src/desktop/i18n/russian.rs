@@ -118,6 +118,8 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Turn on Labs › Smaller model files to use it.", "Включите Лаборатория › Меньшие файлы моделей, чтобы использовать её."),
     ("{model} needs Labs › Smaller model files, so Hex uses {fallback} until you turn it on or choose another model", "{model} требует Лаборатория › Меньшие файлы моделей, поэтому Hex использует {fallback}, пока вы не включите их или не выберете другую модель."),
     ("Add your own speech model files that use Q6_K, Q5_K, or Q4_K weights. They are smaller than Q8_0 but Hex hasn't verified them, so accuracy may vary.", "Добавляйте собственные файлы моделей речи с весами Q6_K, Q5_K или Q4_K. Они меньше Q8_0, но Hex их не проверял, поэтому точность может отличаться."),
+    ("Remote transcription", "Удалённая транскрипция"),
+    ("Send each finished dictation to Hex on another computer over SSH, so this one keeps no speech model loaded. Choose the computer with hex settings set labs.remote_transcription_host; when it can't answer, Hex transcribes here.", "Отправляйте каждую завершённую диктовку в Hex на другом компьютере по SSH, чтобы этот не держал загруженную модель речи. Выберите компьютер командой hex settings set labs.remote_transcription_host; если он не отвечает, Hex транскрибирует здесь."),
     ("Add a speech model file without copying it, so several accounts can share one file", "Добавляет файл модели речи без копирования, чтобы несколько учётных записей могли использовать один файл"),
     ("Turn off the mic when not dictating", "Выключать микрофон вне диктовки"),
     ("The mic opens only while you dictate; the first moment can be clipped", "Микрофон открывается только во время диктовки; самое начало может обрезаться"),

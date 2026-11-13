@@ -138,6 +138,7 @@ impl Feature {
             | Self::PickerActiveFirst
             | Self::ModelInPlace
             | Self::KQuantModels
+            | Self::RemoteTranscription
             | Self::PickerDownloaded
             | Self::SectionKeyAlone
             | Self::KeepRecordings
@@ -256,7 +257,7 @@ impl Feature {
             | Self::VoicePrompt
             | Self::CopyCaptureZip
             | Self::ApiBrowserAccess => 20261112,
-            Self::KQuantModels => 20261113,
+            Self::KQuantModels | Self::RemoteTranscription => 20261113,
         }
     }
 
@@ -292,6 +293,9 @@ impl Feature {
         if key == "labs.api_browser_origins" {
             return Some(Self::ApiBrowserAccess);
         }
+        if key == "labs.remote_transcription_host" || key == "labs.remote_transcription_hex" {
+            return Some(Self::RemoteTranscription);
+        }
         if key == "capture.replay_hotkey" {
             return Some(Self::AnnotateReplay);
         }
@@ -314,7 +318,9 @@ impl Feature {
             Self::TerminalPaste | Self::ShareShortcut | Self::OpenCodeInWsl => {
                 cfg!(target_os = "windows")
             }
-            Self::SectionKeyAlone => cfg!(any(target_os = "linux", target_os = "macos")),
+            Self::SectionKeyAlone | Self::RemoteTranscription => {
+                cfg!(any(target_os = "linux", target_os = "macos"))
+            }
             Self::GnomeClipboardRestore
             | Self::TypedText
             | Self::GnomeMeetingCapsules
@@ -442,6 +448,7 @@ impl Feature {
             Self::PickerActiveFirst => "picker-active-first",
             Self::ModelInPlace => "model-in-place",
             Self::KQuantModels => "k-quant-models",
+            Self::RemoteTranscription => "remote-transcription",
             Self::PickerDownloaded => "picker-downloaded",
             Self::SectionKeyAlone => "section-key",
             Self::KeepRecordings => "keep-recordings",
@@ -528,6 +535,7 @@ impl Feature {
             Self::PickerActiveFirst => "labs.picker_active_first",
             Self::ModelInPlace => "labs.model_in_place",
             Self::KQuantModels => "labs.k_quant_models",
+            Self::RemoteTranscription => "labs.remote_transcription",
             Self::PickerDownloaded => "labs.picker_downloaded",
             Self::SectionKeyAlone => "labs.section_key_alone",
             Self::KeepRecordings => "labs.keep_recordings",
@@ -618,6 +626,7 @@ impl Feature {
             Self::PickerActiveFirst => settings.labs.picker_active_first,
             Self::ModelInPlace => settings.labs.model_in_place,
             Self::KQuantModels => settings.labs.k_quant_models,
+            Self::RemoteTranscription => settings.labs.remote_transcription,
             Self::PickerDownloaded => settings.labs.picker_downloaded,
             Self::SectionKeyAlone => settings.labs.section_key_alone,
             Self::KeepRecordings => settings.labs.keep_recordings,
@@ -705,6 +714,7 @@ impl Feature {
             &mut labs.picker_active_first,
             &mut labs.model_in_place,
             &mut labs.k_quant_models,
+            &mut labs.remote_transcription,
             &mut labs.picker_downloaded,
             &mut labs.section_key_alone,
             &mut labs.keep_recordings,
@@ -800,6 +810,7 @@ impl Feature {
             Self::PickerActiveFirst => settings.labs.picker_active_first = on,
             Self::ModelInPlace => settings.labs.model_in_place = on,
             Self::KQuantModels => settings.labs.k_quant_models = on,
+            Self::RemoteTranscription => settings.labs.remote_transcription = on,
             Self::PickerDownloaded => settings.labs.picker_downloaded = on,
             Self::KeepRecordings => settings.labs.keep_recordings = on,
             Self::SettingsSearch => settings.labs.settings_search = on,
@@ -982,6 +993,19 @@ static API_BROWSER_ACCESS: AtomicBool = AtomicBool::new(false);
 /// written by [`state`] and [`apply`].
 static K_QUANT_MODELS: AtomicBool = AtomicBool::new(false);
 
+/// Labs › Remote transcription's destination, set beside [`STATE`]: the SSH
+/// host and remote `hex`, or `None` while the lab is off or has no host. The
+/// state word is full, so this lab keeps its switch here too.
+static REMOTE_TRANSCRIPTION: LazyLock<RwLock<Option<RemoteTranscription>>> =
+    LazyLock::new(|| RwLock::new(None));
+
+/// Where Labs › Remote transcription sends a finished dictation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteTranscription {
+    pub host: String,
+    pub hex: String,
+}
+
 /// The origins Labs › Browser access to the local API allows, set beside
 /// [`API_BROWSER_ACCESS`]: only normalized `scheme://host[:port]` origins,
 /// and empty while the lab is off.
@@ -1014,6 +1038,7 @@ fn state() -> u64 {
                 VOICE_PROMPT.store(voice_prompt_enabled(&saved), Ordering::Release);
                 COPY_CAPTURE_ZIP.store(copy_capture_zip_enabled(&saved), Ordering::Release);
                 K_QUANT_MODELS.store(k_quant_models_enabled(&saved), Ordering::Release);
+                store_remote_transcription(&saved);
                 store_api_browser_access(&saved);
                 store_voice_prompt_phrase(&saved.voice_prompt_phrase);
             }
@@ -1066,6 +1091,32 @@ fn k_quant_models_enabled(settings: &LabsSettings) -> bool {
     settings.k_quant_models
         && Feature::KQuantModels.shipped()
         && Feature::KQuantModels.managed().is_none()
+}
+
+/// Labs › Remote transcription's destination in `settings`: on in this build,
+/// not locked, and with a host.
+fn remote_transcription_target(settings: &LabsSettings) -> Option<RemoteTranscription> {
+    let host = settings.remote_transcription_host.trim();
+    let on = settings.remote_transcription
+        && Feature::RemoteTranscription.shipped()
+        && Feature::RemoteTranscription.managed().is_none();
+    if !on || host.is_empty() {
+        return None;
+    }
+    let hex = match settings.remote_transcription_hex.trim() {
+        "" => crate::app_settings::DEFAULT_REMOTE_HEX,
+        hex => hex,
+    };
+    Some(RemoteTranscription {
+        host: host.to_owned(),
+        hex: hex.to_owned(),
+    })
+}
+
+fn store_remote_transcription(settings: &LabsSettings) {
+    *REMOTE_TRANSCRIPTION
+        .write()
+        .unwrap_or_else(|error| error.into_inner()) = remote_transcription_target(settings);
 }
 
 /// Whether `settings` turn on Labs › Browser access to the local API in this
@@ -1129,6 +1180,7 @@ pub(crate) fn apply(settings: &LabsSettings) {
     VOICE_PROMPT.store(voice_prompt_enabled(settings), Ordering::Release);
     COPY_CAPTURE_ZIP.store(copy_capture_zip_enabled(settings), Ordering::Release);
     K_QUANT_MODELS.store(k_quant_models_enabled(settings), Ordering::Release);
+    store_remote_transcription(settings);
     store_api_browser_access(settings);
     store_voice_prompt_phrase(&settings.voice_prompt_phrase);
     // Labs › Pause from menu bar: turning it off resumes at once, without
@@ -2214,6 +2266,38 @@ mod tests {
             "labs.copy_capture_zip"
         );
         assert_eq!(Feature::CopyCaptureZip.name(), "copy-capture-zip");
+    }
+
+    #[test]
+    fn remote_transcription_needs_a_host_and_defaults_its_hex() {
+        let mut labs = LabsSettings::default();
+        labs.remote_transcription_host = "me@server".into();
+        assert_eq!(remote_transcription_target(&labs), None, "off by default");
+        labs.remote_transcription = true;
+        labs.remote_transcription_hex = " ".into();
+        assert_eq!(
+            remote_transcription_target(&labs),
+            Some(RemoteTranscription {
+                host: "me@server".into(),
+                hex: crate::app_settings::DEFAULT_REMOTE_HEX.into(),
+            })
+        );
+        labs.remote_transcription_host = "  ".into();
+        assert_eq!(
+            remote_transcription_target(&labs),
+            None,
+            "no host stays local"
+        );
+        assert_eq!(
+            Feature::RemoteTranscription.on_this_os(),
+            cfg!(any(target_os = "macos", target_os = "linux"))
+        );
+        assert_eq!(Feature::RemoteTranscription.group(), Group::Models);
+        assert_eq!(
+            Feature::for_settings_key("labs.remote_transcription_host"),
+            Some(Feature::RemoteTranscription)
+        );
+        assert_eq!(Feature::RemoteTranscription.name(), "remote-transcription");
     }
 
     #[test]

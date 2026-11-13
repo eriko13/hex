@@ -85,10 +85,11 @@ pub enum Feature {
     PrintStart,
     VoicePrompt,
     CopyCaptureZip,
+    RemoteTranscription,
 }
 
 impl Feature {
-    pub const ALL: [Self; 80] = [
+    pub const ALL: [Self; 81] = [
         Self::Meetings,
         Self::VoiceFilter,
         Self::Playground,

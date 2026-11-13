@@ -939,6 +939,14 @@ fn rows(ui: &Ui) -> Vec<Row> {
             tr("Add your own speech model files that use Q6_K, Q5_K, or Q4_K weights. They are smaller than Q8_0 but Hex hasn't verified them, so accuracy may vary."),
         ));
     }
+    if caps.os != super::platform::Os::Windows {
+        rows.push(row(
+            Feature::RemoteTranscription,
+            None,
+            tr("Remote transcription"),
+            tr("Send each finished dictation to Hex on another computer over SSH, so this one keeps no speech model loaded. Choose the computer with hex settings set labs.remote_transcription_host; when it can't answer, Hex transcribes here."),
+        ));
+    }
     rows.push(row(
         Feature::PickerDownloaded,
         None,
@@ -1174,6 +1182,7 @@ fn row_key(lab: Lab) -> &'static str {
         Feature::PickerActiveFirst => "lab-picker-active-first",
         Feature::ModelInPlace => "lab-model-in-place",
         Feature::KQuantModels => "lab-k-quant-models",
+        Feature::RemoteTranscription => "lab-remote-transcription",
         Feature::PickerDownloaded => "lab-picker-downloaded",
         Feature::SectionKeyAlone => "lab-section-key",
         Feature::KeepRecordings => "lab-keep-recordings",

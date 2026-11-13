@@ -128,6 +128,7 @@ impl Feature {
             | Self::PickerActiveFirst
             | Self::ModelInPlace
             | Self::KQuantModels
+            | Self::RemoteTranscription
             | Self::PickerDownloaded
             | Self::ParakeetUltra
             | Self::TranscribeFiles => Group::Models,

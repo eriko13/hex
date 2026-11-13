@@ -122,6 +122,8 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Turn on Labs › Smaller model files to use it.", "Activez Labs › Fichiers de modèle plus petits pour l'utiliser."),
     ("{model} needs Labs › Smaller model files, so Hex uses {fallback} until you turn it on or choose another model", "{model} nécessite Labs › Fichiers de modèle plus petits, donc Hex utilise {fallback} jusqu'à ce que vous l'activiez ou choisissiez un autre modèle."),
     ("Add your own speech model files that use Q6_K, Q5_K, or Q4_K weights. They are smaller than Q8_0 but Hex hasn't verified them, so accuracy may vary.", "Ajoutez vos propres fichiers de modèle vocal avec des poids Q6_K, Q5_K ou Q4_K. Ils sont plus petits que Q8_0, mais Hex ne les a pas vérifiés, donc la précision peut varier."),
+    ("Remote transcription", "Transcription à distance"),
+    ("Send each finished dictation to Hex on another computer over SSH, so this one keeps no speech model loaded. Choose the computer with hex settings set labs.remote_transcription_host; when it can't answer, Hex transcribes here.", "Envoyez chaque dictée terminée à Hex sur un autre ordinateur via SSH, pour que celui-ci ne garde aucun modèle vocal chargé. Choisissez l'ordinateur avec hex settings set labs.remote_transcription_host ; s'il ne répond pas, Hex transcrit ici."),
     ("Add a speech model file without copying it, so several accounts can share one file", "Ajoute un fichier de modèle vocal sans le copier, pour que plusieurs comptes partagent un même fichier"),
     ("Turn off the mic when not dictating", "Couper le micro hors dictée"),
     ("The mic opens only while you dictate; the first moment can be clipped", "Le micro ne s'ouvre que pendant la dictée ; le tout début peut être coupé"),

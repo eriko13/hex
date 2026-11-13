@@ -144,6 +144,13 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        // k_quant_tensors_are_measured_in_their_ggml_block_sizes (gguf_header);
 │                                        // a_k_quant_import_needs_the_lab_and_falls_back_without_it (custom_models);
 │                                        // smaller_model_files_is_its_own_switch_and_macos_only (labs.rs); not observed on Metal
+├── Remote transcription no labs.remote_transcription (macOS, Linux) each finished dictation runs `hex transcribe` on another computer over SSH
+│                                        (labs.remote_transcription_host, labs.remote_transcription_hex); the local model starts parked and
+│                                        loads only when the remote fails; no live stream opens while it's on
+│                                        // checks: remote_transcription_needs_a_host_and_defaults_its_hex (labs.rs);
+│                                        // a_remote_answer_finishes_the_job_without_loading_the_model,
+│                                        // a_failed_remote_falls_back_to_the_local_model, remote_transcription_opens_no_stream (engine);
+│                                        // remote.rs tests; not observed in CI against a real SSH host
 ├── Downloaded models only no labs.picker_downloaded   the picker's All speech models view can show only downloaded models, with the space Hex's copies take (#1018)
 ├── Transcribe files no   labs.transcribe_files        (every OS) `hex transcribe <file>` prints a saved WAV recording's transcript
 │                                        from the selected model (or --model); any length is read in ≤30 s pieces and their text
@@ -1902,6 +1909,25 @@ sizes the header check uses come from ggml's block sizes (256 values in 144,
 `smaller_model_files_is_its_own_switch_and_macos_only` in
 [labs.rs](../../src/labs.rs). Not yet observed: a real K-quant file transcribed
 on Metal (macOS), or the row in a real window.
+
+Remote transcription (`remote-transcription`, macOS and Linux): for a
+computer short on memory. While on with `labs.remote_transcription_host` set
+(an SSH destination that logs in without a prompt), each finished dictation's
+clip goes as a 16-bit WAV over `ssh` to `labs.remote_transcription_hex
+transcribe` (default `~/.local/bin/hex`, which needs Labs › Transcribe files
+on that computer), and its raw text comes back for this Hex's own processing
+and paste (`Source::Remote`). Connections are shared through an SSH control
+socket, so a dictation pays the remote run, not a handshake. No live stream
+opens while it's on, the dictation model starts parked at launch, and a model
+switch only records the selection. Any failure (unreachable host, timeout,
+non-zero exit) is logged and the clip is transcribed here as a fallback,
+loading the model; the next remote success parks it again. "No speech" from
+the remote reads as empty. The remote's own model and language are used.
+Checks: `remote_transcription_needs_a_host_and_defaults_its_hex` in
+[labs.rs](../../src/labs.rs), the engine's remote tests in
+[engine.rs](../../src/transcription/engine.rs), and
+[remote.rs](../../src/transcription/remote.rs). Not yet observed: the Labs
+page goldens with the new row.
 
 Downloaded models only (`picker-downloaded`, issue 1018, every OS): for
 seeing which speech models take disk space and deleting unused ones. While

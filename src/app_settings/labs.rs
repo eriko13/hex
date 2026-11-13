@@ -146,6 +146,14 @@ pub struct LabsSettings {
     /// An import may use Q6_K, Q5_K, or Q4_K weights, which Metal runs and
     /// Hex hasn't verified (macOS).
     pub k_quant_models: bool,
+    /// A finished dictation is transcribed by Hex on another computer over
+    /// SSH; the local model loads only when that computer can't answer.
+    pub remote_transcription: bool,
+    /// The SSH destination Remote transcription runs on, such as
+    /// `me@server`; empty transcribes locally.
+    pub remote_transcription_host: String,
+    /// The `hex` executable on the remote computer, as its shell finds it.
+    pub remote_transcription_hex: String,
     /// The picker's All speech models view offers "Only downloaded models" (issue 1018).
     pub picker_downloaded: bool,
     /// The ISO section key, left of 1, may be a shortcut on its own (Linux
@@ -254,6 +262,10 @@ pub struct LabsSettings {
     pub groups: std::collections::BTreeMap<String, bool>,
 }
 
+/// Where `hex install-linux.sh` puts the executable, which a non-login SSH
+/// shell's `PATH` usually lacks.
+pub const DEFAULT_REMOTE_HEX: &str = "~/.local/bin/hex";
+
 /// The idle times Labs › Unload model when idle offers, in minutes.
 pub const UNLOAD_IDLE_MINUTES: [u32; 4] = [5, 15, 30, 60];
 
@@ -354,6 +366,9 @@ impl Default for LabsSettings {
             picker_active_first: false,
             model_in_place: false,
             k_quant_models: false,
+            remote_transcription: false,
+            remote_transcription_host: String::new(),
+            remote_transcription_hex: DEFAULT_REMOTE_HEX.to_owned(),
             picker_downloaded: false,
             section_key_alone: false,
             keep_recordings: false,

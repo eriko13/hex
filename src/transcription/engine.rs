@@ -31,6 +31,15 @@ pub(crate) type Model = crate::transcription::local_transcriber::LocalTranscribe
 /// Transcribes a complete 16 kHz clip offline on the engine thread.
 pub(crate) type Offline = Box<dyn FnOnce(&mut Model, Vec<f32>) -> Result<String, String> + Send>;
 
+/// Labs › Remote transcription: a finished clip's transcript from another
+/// computer, or `None` to transcribe it here. An error falls back here.
+type Remote = fn(&[f32], &CancelToken) -> Option<Result<String, String>>;
+
+#[cfg(unix)]
+const REMOTE: Remote = crate::transcription::remote::transcribe;
+#[cfg(not(unix))]
+const REMOTE: Remote = |_, _| None;
+
 /// Low-priority work on the model, such as a meeting chunk. It receives
 /// `None` instead of the model when dictation claimed the engine first.
 pub(crate) type Background = Box<dyn FnOnce(Option<&mut Model>) + Send>;
@@ -337,6 +346,8 @@ pub struct Transcribed {
 pub enum Source {
     Stream,
     Offline,
+    /// Another computer transcribed it (Labs › Remote transcription).
+    Remote,
     /// The stream could not be used; the reason is logged with the result.
     Fallback(String),
 }
@@ -346,6 +357,7 @@ impl Source {
         match self {
             Self::Stream => "stream",
             Self::Offline => "offline",
+            Self::Remote => "remote",
             Self::Fallback(_) => "fallback",
         }
     }
@@ -396,6 +408,9 @@ pub struct TranscriptionEngine {
     /// each stream begins: Labs › Live text, or a
     /// [`crate::dictation::live_text::Demand`].
     live_text: fn() -> bool,
+    /// Whether finished dictations go to another computer, asked as each
+    /// stream begins: none opens then, so the local model stays unloaded.
+    remote_on: fn() -> bool,
     held: Held,
     /// Whether the worker is running a dictation stream or finish.
     dictating: Arc<AtomicBool>,
@@ -530,7 +545,7 @@ impl PendingTranscript {
 impl TranscriptionEngine {
     pub fn start(model: Model) -> Result<Self> {
         let streams = model.stream_options().is_some();
-        Self::with_model(Some(model), None, streams)
+        Self::with_model(Some(model), None, streams, REMOTE)
     }
 
     /// Starts with no model loaded, remembering `selection` to reload on the
@@ -544,7 +559,16 @@ impl TranscriptionEngine {
     ) -> Result<Self> {
         let streams = crate::transcription::models::validate(&selection)
             .is_ok_and(|definition| definition.streams);
-        Self::with_model(None, Some(selection), streams)
+        Self::with_model(None, Some(selection), streams, REMOTE)
+    }
+
+    /// Like [`Self::start_parked`], with `remote` answering finished clips.
+    #[cfg(test)]
+    fn start_parked_with_remote(
+        selection: crate::transcription::models::TranscriptionSelection,
+        remote: Remote,
+    ) -> Result<Self> {
+        Self::with_model(None, Some(selection), false, remote)
     }
 
     /// The engine and its worker thread: `model` loaded, or `parked` waiting
@@ -554,6 +578,7 @@ impl TranscriptionEngine {
         model: Option<Model>,
         parked: Option<crate::transcription::models::TranscriptionSelection>,
         streams: bool,
+        remote: Remote,
     ) -> Result<Self> {
         let streams = Arc::new(AtomicBool::new(streams));
         let (commands, receiver) = mpsc::channel();
@@ -578,6 +603,7 @@ impl TranscriptionEngine {
             requests: requests.clone(),
             held: held.clone(),
             dictating: dictating.clone(),
+            remote,
         };
         let thread = thread::Builder::new()
             .name("transcription-engine".into())
@@ -589,6 +615,7 @@ impl TranscriptionEngine {
             requests,
             streams,
             live_text: || crate::labs::live_text() || crate::dictation::live_text::demanded(),
+            remote_on: || crate::labs::remote_transcription().is_some(),
             held,
             dictating,
             next_stream: AtomicU64::new(0),
@@ -609,6 +636,7 @@ impl TranscriptionEngine {
             requests: Arc::default(),
             streams: Arc::new(AtomicBool::new(true)),
             live_text: || false,
+            remote_on: || false,
             held: Held::default(),
             dictating: Arc::default(),
             next_stream: AtomicU64::new(0),
@@ -641,7 +669,7 @@ impl TranscriptionEngine {
 
     /// Opens a live stream when the loaded model can stream on this device.
     pub fn begin(&self) -> Option<LiveStream> {
-        if !self.streams.load(Ordering::Acquire) {
+        if !self.streams.load(Ordering::Acquire) || (self.remote_on)() {
             return None;
         }
         let id = self.next_stream.fetch_add(1, Ordering::Relaxed) + 1;
@@ -668,7 +696,7 @@ impl TranscriptionEngine {
     /// Opens a stream that gives way to dictation, when the loaded model can
     /// stream on this device. See [`YieldingStream`].
     pub(crate) fn begin_yielding(&self) -> Option<YieldingStream> {
-        if !self.streams.load(Ordering::Acquire) {
+        if !self.streams.load(Ordering::Acquire) || (self.remote_on)() {
             return None;
         }
         let id = self.next_stream.fetch_add(1, Ordering::Relaxed) + 1;
@@ -874,6 +902,11 @@ impl TranscriptionEngine {
     /// not on the device it loaded on (a CPU, or a GPU whose stream probe
     /// failed). `None` when a stream can open.
     pub(crate) fn stream_refusal(&self) -> Option<&'static str> {
+        if (self.remote_on)() {
+            return Some(
+                "Labs › Remote transcription sends each finished dictation to another computer",
+            );
+        }
         if self.streams.load(Ordering::Acquire) {
             return None;
         }
@@ -1031,6 +1064,7 @@ struct Worker {
     requests: Arc<AtomicU64>,
     held: Held,
     dictating: Arc<AtomicBool>,
+    remote: Remote,
 }
 
 /// How a live stream ended inside the worker.
@@ -1097,7 +1131,7 @@ impl Worker {
                     };
                     self.dictating.store(true, Ordering::Release);
                     crate::dictation::vocabulary::for_dictation(|| {
-                        self.run_offline(clip, offline, source, job);
+                        self.finish(clip, offline, source, job);
                     });
                     self.dictating.store(false, Ordering::Release);
                 }
@@ -1237,6 +1271,42 @@ impl Worker {
         }
         let started = Instant::now();
         self.start(&job);
+        self.offline(clip, offline, source, started, job);
+    }
+
+    /// Finishes a dictation on another computer while Labs › Remote
+    /// transcription is on, without loading the model here; offline here
+    /// otherwise, or when the other computer can't answer.
+    fn finish(&mut self, clip: Vec<f32>, offline: Offline, source: Source, job: Job) {
+        if job.cancel.is_cancelled() {
+            job.finish(Err("transcription was abandoned".into()));
+            return;
+        }
+        let started = Instant::now();
+        self.start(&job);
+        self.running.enter(&job.cancel);
+        let source = match (self.remote)(&clip, &job.cancel) {
+            None => source,
+            Some(Ok(text)) => {
+                // A fallback loaded the model; the remote answers again, so
+                // its memory is freed until the next fallback.
+                self.park();
+                job.finish(Ok(Transcribed {
+                    text,
+                    source: Source::Remote,
+                    finish_ms: started.elapsed().as_millis() as u64,
+                }));
+                return;
+            }
+            Some(Err(_)) if job.cancel.is_cancelled() => {
+                job.finish(Err("transcription was abandoned".into()));
+                return;
+            }
+            Some(Err(reason)) => {
+                tracing::warn!(%reason, "remote transcription unusable; transcribing here");
+                Source::Fallback(format!("remote transcription failed: {reason}"))
+            }
+        };
         self.offline(clip, offline, source, started, job);
     }
 
@@ -1437,6 +1507,7 @@ mod tests {
     fn source_labels_distinguish_fallbacks() {
         assert_eq!(Source::Stream.label(), "stream");
         assert_eq!(Source::Offline.label(), "offline");
+        assert_eq!(Source::Remote.label(), "remote");
         assert_eq!(Source::Fallback("x".into()).label(), "fallback");
     }
 
@@ -2304,6 +2375,69 @@ mod tests {
                 .unwrap_err()
                 .starts_with("the speech model could not be reloaded"),
             "the failure names why the reload failed"
+        );
+    }
+
+    #[test]
+    fn a_remote_answer_finishes_the_job_without_loading_the_model() {
+        let selection = crate::transcription::models::TranscriptionSelection {
+            language: "zz".into(),
+            ..Default::default()
+        };
+        let engine = TranscriptionEngine::start_parked_with_remote(selection.clone(), |clip, _| {
+            Some(Ok(format!("remote {}", clip.len())))
+        })
+        .unwrap();
+        let transcribed = engine
+            .finish_with(
+                None,
+                vec![0.0; 3],
+                Box::new(|_, _| panic!("a remote answer must not load the model")),
+            )
+            .unwrap()
+            .wait()
+            .unwrap();
+        assert_eq!(transcribed.text, "remote 3");
+        assert_eq!(transcribed.source, Source::Remote);
+        assert!(engine.holds(&selection), "the model stays parked");
+    }
+
+    #[test]
+    fn a_failed_remote_falls_back_to_the_local_model() {
+        let selection = crate::transcription::models::TranscriptionSelection {
+            language: "zz".into(),
+            ..Default::default()
+        };
+        let engine = TranscriptionEngine::start_parked_with_remote(selection, |_, _| {
+            Some(Err("down".into()))
+        })
+        .unwrap();
+        let transcribed = engine
+            .finish_with(
+                None,
+                Vec::new(),
+                Box::new(|_, _| panic!("a parked engine must reload its model first")),
+            )
+            .unwrap()
+            .wait();
+        assert!(
+            transcribed
+                .unwrap_err()
+                .starts_with("the speech model could not be reloaded"),
+            "the fallback reloads the local model"
+        );
+    }
+
+    #[test]
+    fn remote_transcription_opens_no_stream() {
+        let (mut engine, _commands) = TranscriptionEngine::for_test();
+        engine.remote_on = || true;
+        assert!(engine.begin().is_none());
+        assert!(engine.begin_yielding().is_none());
+        assert!(
+            engine
+                .stream_refusal()
+                .is_some_and(|reason| reason.contains("Remote"))
         );
     }
 

@@ -413,6 +413,19 @@ pub fn api_browser_origins() -> Vec<String> {
         .clone()
 }
 
+/// Labs › Remote transcription's destination, while it is on and has a host
+/// (read as each dictation finishes and where the model would load at launch).
+pub fn remote_transcription() -> Option<RemoteTranscription> {
+    let _ = state();
+    if !Feature::RemoteTranscription.on_this_os() {
+        return None;
+    }
+    REMOTE_TRANSCRIPTION
+        .read()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone()
+}
+
 /// Labs › Smaller model files: your own speech model imports may use Q6_K,
 /// Q5_K, or Q4_K weights (macOS, where Metal has their kernels; read where an
 /// import's header is checked and where a saved selection loads).
