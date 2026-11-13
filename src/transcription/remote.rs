@@ -24,6 +24,11 @@ const NO_SPEECH: &str = "no speech was heard";
 /// host; `None` leaves the clip to the local model.
 pub(crate) fn transcribe(clip: &[f32], cancel: &CancelToken) -> Option<Result<String, String>> {
     let target = crate::labs::remote_transcription()?;
+    // The remote model hears words in silence ("Thank you."); the local
+    // detector skips the round trip, as the local path skips such a clip.
+    if crate::transcription::speech_detector::contains_speech(clip) == Some(false) {
+        return Some(Ok(String::new()));
+    }
     let started = Instant::now();
     let result = run(&target, clip, cancel);
     match &result {
