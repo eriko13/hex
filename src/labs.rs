@@ -2270,8 +2270,10 @@ mod tests {
 
     #[test]
     fn remote_transcription_needs_a_host_and_defaults_its_hex() {
-        let mut labs = LabsSettings::default();
-        labs.remote_transcription_host = "me@server".into();
+        let mut labs = LabsSettings {
+            remote_transcription_host: "me@server".into(),
+            ..Default::default()
+        };
         assert_eq!(remote_transcription_target(&labs), None, "off by default");
         labs.remote_transcription = true;
         labs.remote_transcription_hex = " ".into();
