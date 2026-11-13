@@ -1912,7 +1912,8 @@ on Metal (macOS), or the row in a real window.
 
 Remote transcription (`remote-transcription`, macOS and Linux): for a
 computer short on memory. While on with `labs.remote_transcription_host` set
-(an SSH destination that logs in without a prompt), each finished dictation's
+(an SSH destination that logs in without a prompt; the card's Server field
+edits it, saved trimmed once typing pauses), each finished dictation's
 clip goes as a 16-bit WAV over `ssh` to `labs.remote_transcription_hex
 transcribe` (default `~/.local/bin/hex`, which needs Labs › Transcribe files
 on that computer), and its raw text comes back for this Hex's own processing

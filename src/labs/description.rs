@@ -123,7 +123,7 @@ impl Feature {
                 "Add your own speech model files that use Q6_K, Q5_K, or Q4_K weights. They are smaller than Q8_0 but Hex hasn't verified them, so accuracy may vary."
             }
             Self::RemoteTranscription => {
-                "Send each finished dictation to Hex on another computer over SSH, so this one keeps no speech model loaded. Choose the computer with hex settings set labs.remote_transcription_host; when it can't answer, Hex transcribes here."
+                "Transcribe on another computer's Hex over SSH. If it can't answer, Hex transcribes here."
             }
             Self::PickerDownloaded => {
                 "Show only downloaded speech models in the picker, with the space they take"

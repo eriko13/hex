@@ -8,6 +8,7 @@
 
 mod browser_access;
 mod group;
+mod remote_host;
 #[cfg(all(target_os = "macos", hex_capture))]
 mod screenshots;
 mod store;
@@ -217,7 +218,11 @@ pub(super) struct Store {
     /// draft, saved as the comma-separated field shows it.
     pub(super) origins: TextEdit,
     /// Whether `origins` started from the saved origins.
-    pub(super) origins_synced: bool,
+    /// Labs › Remote transcription's server while it's on: a draft, saved
+    /// trimmed once typing pauses.
+    pub(super) host: TextEdit,
+    /// Whether `host` started from the saved server.
+    pub(super) host_synced: bool,
 }
 
 impl Store {
@@ -225,6 +230,34 @@ impl Store {
         self.search.text.trim().to_lowercase()
     }
 
+    /// Starts the server field at `saved` when Labs opens or its lab turns on.
+    pub(super) fn sync_host(&mut self, saved: &str) {
+        self.host = TextEdit::new(saved.to_owned());
+        self.host_synced = true;
+    }
+
+    /// Adopts a server another writer saved, unless the field holds an
+    /// unsaved draft.
+    pub(super) fn rebase_host(&mut self, before: &str, after: &str) {
+        if before != after && (!self.host_synced || self.host.text.trim() == before) {
+            self.sync_host(after);
+        }
+    }
+
+    /// The server `settings` should hold. A lab that's off, or a field this
+    /// window never opened, leaves the saved server alone.
+    pub(super) fn project_host(&self, settings: &mut crate::app_settings::AppSettings) {
+        if settings.labs.remote_transcription && self.host_synced {
+            settings.labs.remote_transcription_host = self.host.text.trim().to_owned();
+        }
+    }
+
+    /// Whether the server field holds typing the saved settings don't have.
+    pub(super) fn host_dirty(&self, settings: &crate::app_settings::AppSettings) -> bool {
+        settings.labs.remote_transcription
+            && self.host_synced
+            && self.host.text.trim() != settings.labs.remote_transcription_host
+    }
     /// Starts the phrase field at `saved` when Labs opens or its lab turns on.
     pub(super) fn sync_phrase(&mut self, saved: &str) {
         self.phrase = TextEdit::new(saved.to_owned());
@@ -365,6 +398,8 @@ fn open(ui: &mut Ui, tx: &mut Tx) {
         .sync_phrase(&ui.settings.labs.voice_prompt_phrase);
     ui.lab_store
         .sync_origins(&ui.settings.labs.api_browser_origins);
+    ui.lab_store
+        .sync_host(&ui.settings.labs.remote_transcription_host);
     tx.settle();
 }
 
@@ -942,9 +977,9 @@ fn rows(ui: &Ui) -> Vec<Row> {
     if caps.os != super::platform::Os::Windows {
         rows.push(row(
             Feature::RemoteTranscription,
-            None,
+            Some(&TERMINAL),
             tr("Remote transcription"),
-            tr("Send each finished dictation to Hex on another computer over SSH, so this one keeps no speech model loaded. Choose the computer with hex settings set labs.remote_transcription_host; when it can't answer, Hex transcribes here."),
+            tr("Transcribe on another computer's Hex over SSH. If it can't answer, Hex transcribes here."),
         ));
     }
     rows.push(row(
@@ -1266,6 +1301,10 @@ fn flip(ui: &mut Ui, lab: Lab) {
             let saved = ui.settings.labs.api_browser_origins.clone();
             ui.lab_store.sync_origins(&saved);
         }
+        Feature::RemoteTranscription => {
+            let saved = ui.settings.labs.remote_transcription_host.clone();
+            ui.lab_store.sync_host(&saved);
+        }
         // A notice already on screen leaves with its lab.
         Feature::FailureNotices if !on => crate::rune_ui::live_text::dismiss_failure(),
         // Hex hears the browser through System Audio Recording.
@@ -1341,6 +1380,7 @@ fn extras(ui: &Ui, p: Paint, entry: &Row, layer: &mut Vec<El>) -> Option<El> {
         ),
         Lab::Feature(Feature::VoicePrompt) => Some(voice_prompt::body(ui, p)),
         Lab::Feature(Feature::ApiBrowserAccess) => Some(browser_access::body(ui, p)),
+        Lab::Feature(Feature::RemoteTranscription) => Some(remote_host::body(ui, p)),
         #[cfg(all(target_os = "macos", hex_capture))]
         Lab::Feature(Feature::Screenshots) => Some(screenshots::body(
             ui,

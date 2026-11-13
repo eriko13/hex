@@ -710,6 +710,7 @@ struct Drafts {
     vocabulary: bool,
     phrase: bool,
     origins: bool,
+    host: bool,
 }
 
 impl Ui {
@@ -889,6 +890,10 @@ impl Ui {
             &submitted.labs.api_browser_origins,
             &candidate.labs.api_browser_origins,
         );
+        self.lab_store.rebase_host(
+            &submitted.labs.remote_transcription_host,
+            &candidate.labs.remote_transcription_host,
+        );
         self.settings = candidate;
         self.modes.committed(&self.settings);
         self.draft_since = None;
@@ -911,6 +916,7 @@ impl Ui {
         candidate.vocabulary = self.vocabulary.project();
         self.lab_store.project_phrase(&mut candidate);
         self.lab_store.project_origins(&mut candidate);
+        self.lab_store.project_host(&mut candidate);
         candidate
     }
 
@@ -924,6 +930,7 @@ impl Ui {
             vocabulary: self.vocabulary.project() != settings.vocabulary,
             phrase: self.lab_store.phrase_dirty(settings),
             origins: self.lab_store.origins_dirty(settings),
+            host: self.lab_store.host_dirty(settings),
         }
     }
 
@@ -1128,6 +1135,15 @@ impl Ui {
                 self.lab_store.rebase_origins(
                     &self.settings.labs.api_browser_origins,
                     &service.labs.api_browser_origins,
+                );
+            }
+            if service.labs.remote_transcription != self.settings.labs.remote_transcription {
+                self.lab_store
+                    .sync_host(&service.labs.remote_transcription_host);
+            } else if !drafts.host {
+                self.lab_store.rebase_host(
+                    &self.settings.labs.remote_transcription_host,
+                    &service.labs.remote_transcription_host,
                 );
             }
             self.settings = service.clone();
