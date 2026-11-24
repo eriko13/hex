@@ -567,6 +567,19 @@ pub fn k_quant_models() -> bool {
     feature_on(Feature::KQuantModels)
 }
 
+/// Labs › Remote transcription's destination while it is on and has a host
+/// (macOS and Linux; read as each dictation finishes, as its engine opens a
+/// stream, and where the model would load at launch or on a switch).
+pub fn remote_transcription() -> Option<RemoteTranscription> {
+    if !feature_on(Feature::RemoteTranscription) {
+        return None;
+    }
+    REMOTE_TRANSCRIPTION
+        .read()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone()
+}
+
 /// The apps YOLO mode sends in (empty: everywhere), or None while off.
 pub fn yolo_mode_apps() -> Option<Vec<String>> {
     ensure_loaded();

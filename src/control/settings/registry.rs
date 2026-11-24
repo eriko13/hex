@@ -740,6 +740,24 @@ pub(super) const KEYS: &[Key] = &[
         "Labs: add your own speech model files that use Q6_K, Q5_K, or Q4_K weights (macOS); they are smaller than Q8_0 but Hex hasn't verified them",
     ),
     key(
+        "labs.remote_transcription",
+        Kind::Bool,
+        "Labs: each finished dictation is transcribed by Hex on another computer over SSH \
+         (labs.remote_transcription_host); the local model loads only when it can't answer \
+         (macOS and Linux)",
+    ),
+    key(
+        "labs.remote_transcription_host",
+        Kind::Text,
+        "Labs: the SSH destination Remote transcription uses, such as me@server; it must log in \
+         without a password prompt",
+    ),
+    key(
+        "labs.remote_transcription_hex",
+        Kind::Text,
+        "Labs: the hex executable on the Remote transcription computer; ~/.local/bin/hex by default",
+    ),
+    key(
         "labs.picker_downloaded",
         Kind::Bool,
         "Labs: the speech model picker's All speech models view offers Only downloaded models, with the space they take",

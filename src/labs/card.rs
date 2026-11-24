@@ -51,6 +51,7 @@ impl Feature {
             Self::OutputFixes => "Fix results in Output",
             Self::ModelInPlace => "Use model files where they are",
             Self::KQuantModels => "Smaller model files",
+            Self::RemoteTranscription => "Remote transcription",
             Self::PickerDownloaded => "Downloaded models only",
             Self::SectionKeyAlone => "§ key alone",
             Self::MicrophoneKeyAlone => "Microphone key alone",
@@ -220,6 +221,9 @@ impl Feature {
             }
             Self::KQuantModels => {
                 "Add your own speech model files saved in smaller formats (Q6_K, Q5_K, or Q4_K). They take less space, but Hex hasn't checked them, so accuracy may vary."
+            }
+            Self::RemoteTranscription => {
+                "Transcribe on another computer's Hex over SSH. If it can't answer, Hex transcribes here."
             }
             Self::PickerDownloaded => {
                 "Show only downloaded speech models in the list, with the space they take"

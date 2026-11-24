@@ -198,6 +198,17 @@ static SIGNATURE_TEXT: LazyLock<RwLock<String>> =
 static CLIPBOARD_PHRASE_TEXT: LazyLock<RwLock<String>> =
     LazyLock::new(|| RwLock::new(crate::dictation::clipboard_phrase::DEFAULT_PHRASE.to_owned()));
 
+/// Labs › Remote transcription's destination, paired with
+/// `Feature::RemoteTranscription` in [`BANK`]: `None` while it has no host.
+static REMOTE_TRANSCRIPTION: RwLock<Option<RemoteTranscription>> = RwLock::new(None);
+
+/// Where Labs › Remote transcription sends a finished dictation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteTranscription {
+    pub host: String,
+    pub hex: String,
+}
+
 /// The style each normal dictation is written as, read only while
 /// `Feature::DictationStyle` is on.
 static DICTATION_STYLE_CHOICE: LazyLock<RwLock<DictationStyle>> =
@@ -291,6 +302,23 @@ fn store_clipboard_phrase_text(phrase: &str) {
         );
 }
 
+/// Labs › Remote transcription's destination in `settings`: switched on and
+/// with a host, its `hex` defaulting when blank.
+fn remote_transcription_target(settings: &LabsSettings) -> Option<RemoteTranscription> {
+    let host = settings.remote_transcription_host.trim();
+    if !settings.remote_transcription || host.is_empty() {
+        return None;
+    }
+    let hex = match settings.remote_transcription_hex.trim() {
+        "" => crate::app_settings::DEFAULT_REMOTE_HEX,
+        hex => hex,
+    };
+    Some(RemoteTranscription {
+        host: host.to_owned(),
+        hex: hex.to_owned(),
+    })
+}
+
 /// Records the style each normal dictation is written as. An unknown value
 /// never reaches here (serde rejects it on load).
 fn store_dictation_style_choice(style: DictationStyle) {
@@ -318,6 +346,10 @@ fn store_all(settings: &LabsSettings) {
         .write()
         .unwrap_or_else(|error| error.into_inner()) =
         (settings.yolo_mode && reaches(Feature::YoloMode)).then(|| settings.yolo_mode_apps.clone());
+    *REMOTE_TRANSCRIPTION
+        .write()
+        .unwrap_or_else(|error| error.into_inner()) =
+        remote_transcription_target(settings).filter(|_| reaches(Feature::RemoteTranscription));
     store_voice_prompt_phrase(&settings.voice_prompt_phrase);
     store_stop_phrase_text(&settings.stop_phrase_text);
     store_signature_text(&settings.signature_text);
@@ -622,6 +654,46 @@ mod tests {
         assert!(!feature.on(&AppSettings::default()));
         assert!(feature.on_this_os());
         assert_eq!(Feature::from_name("stop-any-call-recording"), Some(feature));
+    }
+
+    #[test]
+    fn remote_transcription_needs_a_host_and_defaults_its_hex() {
+        let mut labs = LabsSettings {
+            remote_transcription_host: "me@server".into(),
+            ..Default::default()
+        };
+        assert_eq!(remote_transcription_target(&labs), None, "off by default");
+        labs.remote_transcription = true;
+        labs.remote_transcription_hex = " ".into();
+        assert_eq!(
+            remote_transcription_target(&labs),
+            Some(RemoteTranscription {
+                host: "me@server".into(),
+                hex: crate::app_settings::DEFAULT_REMOTE_HEX.into(),
+            })
+        );
+        labs.remote_transcription_host = "  ".into();
+        assert_eq!(
+            remote_transcription_target(&labs),
+            None,
+            "no host stays local"
+        );
+        let feature = Feature::RemoteTranscription;
+        assert_eq!(feature.oses(), &[Os::Macos, Os::Linux]);
+        assert_eq!(
+            feature.on_this_os(),
+            cfg!(any(target_os = "macos", target_os = "linux"))
+        );
+        assert_eq!(feature.group(), Group::Models);
+        assert_eq!(feature.audience(), Audience::Everyone);
+        assert_eq!(feature.name(), "remote-transcription");
+        for key in [
+            "labs.remote_transcription",
+            "labs.remote_transcription_host",
+            "labs.remote_transcription_hex",
+        ] {
+            assert_eq!(Feature::for_settings_key(key), Some(feature));
+        }
     }
 
     #[test]

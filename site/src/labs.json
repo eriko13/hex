@@ -499,6 +499,18 @@
       "title": "Smaller model files"
     },
     {
+      "added": "2026-11-24",
+      "group": "models",
+      "groupTitle": "Models",
+      "id": "remote-transcription",
+      "oses": [
+        "macos",
+        "linux"
+      ],
+      "summary": "Transcribe on another computer's Hex over SSH. If it can't answer, Hex transcribes here.",
+      "title": "Remote transcription"
+    },
+    {
       "added": "2026-11-02",
       "group": "models",
       "groupTitle": "Models",

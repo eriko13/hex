@@ -185,6 +185,7 @@ define_features! {
     OutputFixes => labs(output_fixes), "output-fixes", Output, Everyone, EVERY, 20261102;
     ModelInPlace => labs(model_in_place), "model-in-place", Models, Everyone, EVERY, 20261102;
     KQuantModels => labs(k_quant_models), "k-quant-models", Models, Everyone, MACOS, 20261113;
+    RemoteTranscription => labs(remote_transcription), "remote-transcription", Models, Everyone, MACOS_LINUX, 20261124, extra: ["labs.remote_transcription_host", "labs.remote_transcription_hex"];
     PickerDownloaded => labs(picker_downloaded), "picker-downloaded", Models, Everyone, EVERY, 20261102;
     SectionKeyAlone => labs(section_key_alone), "section-key", Shortcuts, Everyone, MACOS_LINUX, 20261102;
     MicrophoneKeyAlone => labs(microphone_key), "microphone-key", Shortcuts, Everyone, MACOS, 20261115;

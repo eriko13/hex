@@ -280,7 +280,9 @@ impl DictationWorker {
         // Labs › Free memory when idle parks a GGUF model at launch too:
         // the first dictation reloads it, so memory stays free until then.
         // Apple Speech holds no model of Hex's and stays loaded.
-        let parked = crate::labs::unload_idle().is_some()
+        // Labs › Remote transcription parks it too: only a fallback loads it.
+        let parked = (crate::labs::unload_idle().is_some()
+            || crate::labs::remote_transcription().is_some())
             && validate(&selection).is_ok_and(|definition| definition.runtime.is_gguf());
         let engine = if parked {
             TranscriptionEngine::start_parked(selection)
@@ -530,6 +532,11 @@ impl DictationWorker {
 
     /// Switches the warm model after the work already handed to the engine.
     pub fn reload(&self, selection: TranscriptionSelection) -> Result<(), &'static str> {
+        // Work sent to a parked engine loads its model first, which Labs ›
+        // Remote transcription keeps unloaded; dictation runs elsewhere.
+        if crate::labs::remote_transcription().is_some() {
+            return Ok(());
+        }
         let events = self.event_sender.clone();
         self.engine
             .as_ref()

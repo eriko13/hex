@@ -29,6 +29,7 @@ mod model_switch;
 pub(crate) mod numbers;
 mod onboarding;
 mod portuguese;
+mod remote_transcription;
 mod routing;
 mod russian;
 mod screenshots;
@@ -408,6 +409,7 @@ pub(super) fn all_translations() -> impl Iterator<Item = &'static (&'static str,
         .chain(style::TRANSLATIONS)
         .chain(signature::TRANSLATIONS)
         .chain(clipboard_phrase::TRANSLATIONS)
+        .chain(remote_transcription::TRANSLATIONS)
         .chain(annotate_dictation::TRANSLATIONS)
         .chain(agents::TRANSLATIONS)
         .chain(failures::TRANSLATIONS)
@@ -638,6 +640,7 @@ mod tests {
         include_str!("../rune_ui/labs/group.rs"),
         include_str!("../rune_ui/labs/clipboard_phrase.rs"),
         include_str!("../rune_ui/labs/hud_height.rs"),
+        include_str!("../rune_ui/labs/remote_host.rs"),
         include_str!("../rune_ui/labs/screenshots.rs"),
         include_str!("../rune_ui/labs/signature.rs"),
         include_str!("../rune_ui/labs/store.rs"),

@@ -202,7 +202,11 @@ pub(crate) fn run(
     // it.
     let transcriber = match transcriber {
         Some(transcriber) => Some(transcriber),
-        None if crate::labs::unload_idle().is_some() => None,
+        None if crate::labs::unload_idle().is_some()
+            || crate::labs::remote_transcription().is_some() =>
+        {
+            None
+        }
         None => Some(LocalTranscriber::load(
             &crate::transcription::custom_models::runnable(&settings.transcription),
         )?),

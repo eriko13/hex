@@ -10,6 +10,7 @@ mod clipboard_phrase;
 mod group;
 #[cfg(target_os = "macos")]
 mod hud_height;
+mod remote_host;
 #[cfg(all(target_os = "macos", hex_capture))]
 pub(super) mod screenshots;
 mod signature;
@@ -239,6 +240,11 @@ pub(super) struct Store {
     pub(super) clipboard_phrase: TextEdit,
     /// Whether `clipboard_phrase` started from the saved phrase.
     pub(super) clipboard_phrase_synced: bool,
+    /// Labs › Remote transcription's server while it's on: a draft, saved
+    /// trimmed once typing pauses.
+    pub(super) host: TextEdit,
+    /// Whether `host` started from the saved server.
+    pub(super) host_synced: bool,
     /// Labs › HUD height's slider while it drags: the point gap shown
     /// before release saves it.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -255,6 +261,7 @@ pub(super) struct LabDrafts {
     stop_phrase: bool,
     signature: bool,
     clipboard_phrase: bool,
+    host: bool,
 }
 
 /// How long a linked lab's card keeps its focus border.
@@ -420,6 +427,7 @@ impl Store {
         self.project_stop_phrase(settings);
         self.project_signature(settings);
         self.project_clipboard_phrase(settings);
+        self.project_host(settings);
     }
 
     /// Which lab fields hold typing `settings` don't have yet.
@@ -429,6 +437,7 @@ impl Store {
             stop_phrase: self.stop_phrase_dirty(settings),
             signature: self.signature_dirty(settings),
             clipboard_phrase: self.clipboard_phrase_dirty(settings),
+            host: self.host_dirty(settings),
         }
     }
 
@@ -445,6 +454,7 @@ impl Store {
             stop_phrase,
             signature,
             clipboard_phrase,
+            host,
         } = drafts;
         if after.voice_prompt != before.voice_prompt {
             self.sync_phrase(&after.voice_prompt_phrase);
@@ -469,6 +479,15 @@ impl Store {
                 &after.clipboard_phrase_text,
             );
         }
+        if after.remote_transcription != before.remote_transcription {
+            self.sync_host(&after.remote_transcription_host);
+        } else if !host {
+            let (before, after) = (
+                &before.remote_transcription_host,
+                &after.remote_transcription_host,
+            );
+            self.rebase_host(before, after);
+        }
     }
 
     /// Adopts the lab texts a save committed, each unless its field holds a
@@ -482,6 +501,10 @@ impl Store {
         self.rebase_stop_phrase(&before.stop_phrase_text, &after.stop_phrase_text);
         self.rebase_signature(&before.signature_text, &after.signature_text);
         self.rebase_clipboard_phrase(&before.clipboard_phrase_text, &after.clipboard_phrase_text);
+        self.rebase_host(
+            &before.remote_transcription_host,
+            &after.remote_transcription_host,
+        );
     }
 }
 
@@ -555,6 +578,8 @@ fn open(ui: &mut Ui, tx: &mut Tx) {
         .sync_signature(&ui.settings.labs.signature_text);
     ui.lab_store
         .sync_clipboard_phrase(&ui.settings.labs.clipboard_phrase_text);
+    ui.lab_store
+        .sync_host(&ui.settings.labs.remote_transcription_host);
     tx.settle();
 }
 
@@ -904,6 +929,9 @@ fn rows(ui: &Ui) -> Vec<Row> {
     if caps.os == super::platform::Os::Macos {
         rows.push(row(Feature::KQuantModels, None));
     }
+    if caps.os != super::platform::Os::Windows {
+        rows.push(row(Feature::RemoteTranscription, Some(&TERMINAL)));
+    }
     rows.push(row(Feature::PickerDownloaded, None));
     // The card names the kinds the drop target offers, unless an
     // organization's lock already says why it can't be used.
@@ -1083,6 +1111,7 @@ fn row_key(lab: Lab) -> &'static str {
         Feature::OutputFixes => "lab-output-fixes",
         Feature::ModelInPlace => "lab-model-in-place",
         Feature::KQuantModels => "lab-k-quant-models",
+        Feature::RemoteTranscription => "lab-remote-transcription",
         Feature::PickerDownloaded => "lab-picker-downloaded",
         Feature::SectionKeyAlone => "lab-section-key",
         Feature::MicrophoneKeyAlone => "lab-microphone-key",
@@ -1194,6 +1223,10 @@ fn flip(ui: &mut Ui, lab: Lab) {
             let saved = ui.settings.labs.clipboard_phrase_text.clone();
             ui.lab_store.sync_clipboard_phrase(&saved);
         }
+        Feature::RemoteTranscription => {
+            let saved = ui.settings.labs.remote_transcription_host.clone();
+            ui.lab_store.sync_host(&saved);
+        }
         // A notice already on screen leaves with its lab.
         Feature::FailureNotices if !on => crate::rune_ui::live_text::dismiss_failure(),
         // Hex hears the browser through System Audio Recording.
@@ -1272,6 +1305,7 @@ fn extras(ui: &Ui, p: Paint, entry: &Row, layer: &mut Vec<El>) -> Option<El> {
         Lab::Feature(Feature::StopPhrase) => Some(stop_phrase::body(ui, p)),
         Lab::Feature(Feature::Signature) => Some(signature::body(ui, p)),
         Lab::Feature(Feature::ClipboardPhrase) => Some(clipboard_phrase::body(ui, p)),
+        Lab::Feature(Feature::RemoteTranscription) => Some(remote_host::body(ui, p)),
         #[cfg(target_os = "macos")]
         Lab::Feature(Feature::HudHeight) => Some(hud_height::body(ui, p)),
         Lab::Feature(Feature::DictationStyle) => Some(

@@ -8,6 +8,7 @@
 //! order on one thread, because a live stream holds the model's compute lease.
 
 use std::collections::VecDeque;
+mod remote;
 mod slot;
 mod streaming;
 
@@ -372,6 +373,8 @@ pub struct Transcribed {
 pub enum Source {
     Stream,
     Offline,
+    /// Another computer transcribed it (Labs › Remote transcription).
+    Remote,
     /// The stream could not be used; the reason is logged with the result.
     Fallback(String),
 }
@@ -381,6 +384,7 @@ impl Source {
         match self {
             Self::Stream => "stream",
             Self::Offline => "offline",
+            Self::Remote => "remote",
             Self::Fallback(_) => "fallback",
         }
     }
@@ -428,6 +432,8 @@ pub struct TranscriptionEngine {
     /// each stream begins: Labs › Live text, or a
     /// [`crate::dictation::live_text::Demand`].
     live_text: fn() -> bool,
+    /// Whether finished dictations go to another computer: no stream opens.
+    remote_on: fn() -> bool,
     held: Held,
     /// Whether the worker is running a dictation stream or finish.
     dictating: Arc<AtomicBool>,
@@ -573,7 +579,7 @@ impl PendingTranscript {
 
 impl TranscriptionEngine {
     pub fn start(model: Model) -> Result<Self> {
-        Self::with_slot(ModelSlot::loaded(model))
+        Self::with_slot(ModelSlot::loaded(model), remote::REMOTE)
     }
 
     /// Starts with no model loaded, remembering `selection` to reload on the
@@ -585,11 +591,11 @@ impl TranscriptionEngine {
     pub fn start_parked(
         selection: crate::transcription::models::TranscriptionSelection,
     ) -> Result<Self> {
-        Self::with_slot(ModelSlot::parked(selection))
+        Self::with_slot(ModelSlot::parked(selection), remote::REMOTE)
     }
 
     /// The engine and its worker thread initialized with `slot`.
-    fn with_slot(slot: ModelSlot) -> Result<Self> {
+    fn with_slot(slot: ModelSlot, remote: remote::Remote) -> Result<Self> {
         let (commands, receiver) = mpsc::channel();
         let requests = Arc::new(AtomicU64::new(0));
         let running = Running::default();
@@ -609,6 +615,7 @@ impl TranscriptionEngine {
             requests: requests.clone(),
             held: held.clone(),
             dictating: dictating.clone(),
+            remote,
         };
         let thread = thread::Builder::new()
             .name("transcription-engine".into())
@@ -623,6 +630,7 @@ impl TranscriptionEngine {
                     || crate::labs::stop_phrase()
                     || crate::dictation::live_text::demanded()
             },
+            remote_on: remote::on,
             held,
             dictating,
             next_stream: AtomicU64::new(0),
@@ -642,6 +650,7 @@ impl TranscriptionEngine {
             stalled: Arc::default(),
             requests: Arc::default(),
             live_text: || false,
+            remote_on: || false,
             held: Held::new(Mutex::new(HeldState::Loaded {
                 selection: None,
                 backend: None,
@@ -739,10 +748,8 @@ impl TranscriptionEngine {
 
     /// Whether the loaded model (or parked model) can stream on its device.
     pub(crate) fn streams(&self) -> bool {
-        self.held
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .streams()
+        let held = self.held.lock().unwrap_or_else(|error| error.into_inner());
+        !(self.remote_on)() && held.streams()
     }
 
     /// Finishes a capture with its complete 16 kHz clip. Without a stream,
@@ -933,12 +940,13 @@ impl TranscriptionEngine {
     /// Why a live stream cannot open for a capture, when it can't: the
     /// model's own definition doesn't stream, or it streams in principle but
     /// not on the device it loaded on (a CPU, or a GPU whose stream probe
-    /// failed). `None` when a stream can open.
+    /// failed), or Labs › Remote transcription is on. `None` when a stream
+    /// can open.
     pub(crate) fn stream_refusal(&self) -> Option<&'static str> {
-        self.held
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .stream_refusal()
+        let held = self.held.lock().unwrap_or_else(|error| error.into_inner());
+        (self.remote_on)()
+            .then_some(remote::REFUSAL)
+            .or_else(|| held.stream_refusal())
     }
 }
 
@@ -1082,6 +1090,7 @@ struct Worker {
     requests: Arc<AtomicU64>,
     held: Held,
     dictating: Arc<AtomicBool>,
+    remote: remote::Remote,
 }
 
 /// How a live stream ended inside the worker.
@@ -1159,7 +1168,7 @@ impl Worker {
                     };
                     self.dictating.store(true, Ordering::Release);
                     crate::dictation::vocabulary::for_dictation(|| {
-                        self.run_offline(clip, offline, source, job);
+                        self.finish(clip, offline, source, job);
                     });
                     self.dictating.store(false, Ordering::Release);
                 }
@@ -1536,6 +1545,7 @@ mod tests {
     fn source_labels_distinguish_fallbacks() {
         assert_eq!(Source::Stream.label(), "stream");
         assert_eq!(Source::Offline.label(), "offline");
+        assert_eq!(Source::Remote.label(), "remote");
         assert_eq!(Source::Fallback("x".into()).label(), "fallback");
     }
 
