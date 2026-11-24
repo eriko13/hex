@@ -1,0 +1,118 @@
+name: Fork remote transcription
+
+# Fork-only: tests the Remote transcription lab on hosted runners and builds
+# an unsigned local macOS app (updates off) to install by hand. The Linux job
+# regenerates the Labs page goldens and uploads any that changed.
+on:
+  push:
+    branches: [remote-transcription, remote-transcription-ui]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-remote-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macos (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # arm64 runners are often out of capacity; the Intel runner
+        # cross-compiles the same arm64 app.
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    env:
+      CARGO_BUILD_TARGET: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          cache-on-failure: true
+      - name: Use the newest Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$xcode" ] && sudo xcode-select -s "$xcode"
+          xcodebuild -version
+      - name: Install the Metal toolchain
+        run: xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+      - name: Build Hex.app (local build, updates off)
+        env:
+          HEX_LOCAL_BUILD: "1"
+          HEX_RELEASE_UNSIGNED: "1"
+        run: |
+          # build-app.sh copies from target/release, but an explicit target
+          # builds into target/<target>/release. A symlink between the two
+          # deadlocks Cargo on its own build-directory lock, so the copy paths
+          # are rewritten instead.
+          sed "s#\$root/target/release/#\$root/target/$CARGO_BUILD_TARGET/release/#g" \
+            scripts/build-app.sh > scripts/build-app-ci.sh
+          chmod +x scripts/build-app-ci.sh
+          grep -n "target/$CARGO_BUILD_TARGET/release" scripts/build-app-ci.sh
+          bundle=$(scripts/build-app-ci.sh)
+          file "$bundle/Contents/MacOS/hex" "$bundle/Contents/MacOS/scrawl-helper"
+          mkdir -p dist
+          /usr/bin/ditto -c -k --keepParent "$bundle" dist/Hex-remote.zip
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: hex-remote-${{ matrix.runner }}
+          path: dist/Hex-remote.zip
+          retention-days: 14
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      SOURCE_DATE_EPOCH: "0"
+      BLA_VENDOR: OpenBLAS
+      OPENSSL_NO_VENDOR: "1"
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          cache-on-failure: true
+      - name: Install native libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake pkg-config python3 libasound2-dev \
+            libssl-dev libgtk-3-dev \
+            libxkbcommon-x11-dev libx11-xcb-dev libfontconfig1-dev libfreetype-dev \
+            libxcursor-dev libxi-dev libxrandr-dev libopenblas-dev libvulkan-dev \
+            glslc libshaderc-dev mesa-vulkan-drivers
+      - name: Regenerate goldens
+        run: HEX_UPDATE_GOLDENS=1 cargo test --locked --bin hex rune_ui
+      - name: Collect changed goldens
+        if: always()
+        run: |
+          mkdir -p dist
+          git status --porcelain
+          git status --porcelain | awk '{print $2}' | grep -v '^dist/' > dist/changed.txt || true
+          [ -s dist/changed.txt ] && tar -czf dist/goldens.tgz -T dist/changed.txt || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: goldens
+          path: dist/
+          if-no-files-found: ignore
+      - run: cargo test --locked --bin hex
+      - run: cargo clippy --locked --bin hex --tests -- -D warnings
